@@ -125,6 +125,13 @@ func (r *fileRunner) Close(context.Context) error {
 }
 
 func (r *fileRunner) setInput() error {
+	// If query is provided, use it instead of input file
+	if r.cfg.Query != "" {
+		r.input = strings.NewReader(r.cfg.Query)
+		return nil
+	}
+
+	// Otherwise use input file as before
 	switch r.cfg.InputFile {
 	case "stdin":
 		r.input = os.Stdin

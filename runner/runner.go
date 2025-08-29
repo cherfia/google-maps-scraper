@@ -79,6 +79,7 @@ type Config struct {
 	Addr                     string
 	DisablePageReuse         bool
 	ExtraReviews             bool
+	Query                    string
 }
 
 func ParseConfig() *Config {
@@ -125,6 +126,7 @@ func ParseConfig() *Config {
 	flag.StringVar(&cfg.Addr, "addr", ":8080", "address to listen on for web server")
 	flag.BoolVar(&cfg.DisablePageReuse, "disable-page-reuse", false, "disable page reuse in playwright")
 	flag.BoolVar(&cfg.ExtraReviews, "extra-reviews", false, "enable extra reviews collection")
+	flag.StringVar(&cfg.Query, "query", "", "query to search for directly (alternative to input file)")
 
 	flag.Parse()
 
@@ -148,8 +150,8 @@ func ParseConfig() *Config {
 		panic("S3Bucket must be provided when using AwsLambdaInvoker")
 	}
 
-	if cfg.AwsLambdaInvoker && cfg.InputFile == "" {
-		panic("InputFile must be provided when using AwsLambdaInvoker")
+	if cfg.AwsLambdaInvoker && cfg.InputFile == "" && cfg.Query == "" {
+		panic("InputFile or Query must be provided when using AwsLambdaInvoker")
 	}
 
 	if cfg.Concurrency < 1 {
@@ -181,7 +183,7 @@ func ParseConfig() *Config {
 		cfg.RunMode = RunModeAwsLambdaInvoker
 	case cfg.AwsLamdbaRunner:
 		cfg.RunMode = RunModeAwsLambda
-	case cfg.WebRunner || (cfg.Dsn == "" && cfg.InputFile == ""):
+	case cfg.WebRunner || (cfg.Dsn == "" && cfg.InputFile == "" && cfg.Query == ""):
 		cfg.RunMode = RunModeWeb
 	case cfg.Dsn == "":
 		cfg.RunMode = RunModeFile
