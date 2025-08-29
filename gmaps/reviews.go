@@ -60,24 +60,8 @@ func (f *fetcher) fetch(ctx context.Context) (fetchReviewsResponse, error) {
 	ans := fetchReviewsResponse{}
 	ans.pages = append(ans.pages, currentPageBody)
 
-	nextPageToken := extractNextPageToken(currentPageBody)
-
-	for nextPageToken != "" {
-		reviewURL, err = f.generateURL(f.params.mapURL, nextPageToken, 20, requestIDForSession)
-		if err != nil {
-			fmt.Printf("Error generating URL for token %s: %v\n", nextPageToken, err)
-			break
-		}
-
-		currentPageBody, err = f.fetchReviewPage(ctx, reviewURL)
-		if err != nil {
-			fmt.Printf("Error fetching review page with token %s: %v (%s)\n", nextPageToken, err, reviewURL)
-			break
-		}
-
-		ans.pages = append(ans.pages, currentPageBody)
-		nextPageToken = extractNextPageToken(currentPageBody)
-	}
+	// Only fetch the first page to get 20 reviews, don't continue pagination
+	// This limits the total reviews to 20 instead of fetching up to 300
 
 	return ans, nil
 }
