@@ -51,6 +51,7 @@ func Test_EntryFromJSON(t *testing.T) {
 		Cid:          "16519582940102929223",
 		Status:       "Closed ⋅ Opens 12:30\u202fpm Tue",
 		ReviewsLink:  "https://search.google.com/local/reviews?placeid=ChIJDdnwdv0y5xQRRytw1ihZQeU&q=Kipriakon&authuser=0&hl=en&gl=CY",
+		PlaceID:      "ChIJDdnwdv0y5xQRRytw1ihZQeU",
 		Thumbnail:    "https://lh5.googleusercontent.com/p/AF1QipP4Y7A8nYL3KKXznSl69pXSq9p2IXCYUjVvOh0F=w408-h408-k-no",
 		Timezone:     "Asia/Nicosia",
 		PriceRange:   "€€",
@@ -355,6 +356,57 @@ func TestCategorizePriceRange_EdgeCases(t *testing.T) {
 	for _, tt := range boundaryTests {
 		t.Run(fmt.Sprintf("boundary_%.2f", tt.value), func(t *testing.T) {
 			result := gmaps.CategorizePriceRange(fmt.Sprintf("%.2f", tt.value))
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExtractPlaceIDFromReviewsLink(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "valid reviews link",
+			input:    "https://search.google.com/local/reviews?placeid=ChIJgxwpY1_MHkcRFKqXgftRhPY&q=La+Cantina&authuser=0&hl=en&gl=PL",
+			expected: "ChIJgxwpY1_MHkcRFKqXgftRhPY",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "no placeid parameter",
+			input:    "https://search.google.com/local/reviews?q=La+Cantina&authuser=0&hl=en&gl=PL",
+			expected: "",
+		},
+		{
+			name:     "placeid at end of URL",
+			input:    "https://search.google.com/local/reviews?q=La+Cantina&authuser=0&hl=en&gl=PL&placeid=ChIJgxwpY1_MHkcRFKqXgftRhPY",
+			expected: "ChIJgxwpY1_MHkcRFKqXgftRhPY",
+		},
+		{
+			name:     "placeid in middle of URL",
+			input:    "https://search.google.com/local/reviews?q=La+Cantina&placeid=ChIJgxwpY1_MHkcRFKqXgftRhPY&authuser=0&hl=en&gl=PL",
+			expected: "ChIJgxwpY1_MHkcRFKqXgftRhPY",
+		},
+		{
+			name:     "invalid URL format",
+			input:    "not a URL",
+			expected: "",
+		},
+		{
+			name:     "placeid with special characters",
+			input:    "https://search.google.com/local/reviews?placeid=ChIJgxwpY1_MHkcRFKqXgftRhPY%20encoded&q=La+Cantina",
+			expected: "ChIJgxwpY1_MHkcRFKqXgftRhPY%20encoded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := gmaps.ExtractPlaceIDFromReviewsLink(tt.input)
 			require.Equal(t, tt.expected, result)
 		})
 	}

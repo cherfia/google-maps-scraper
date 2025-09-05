@@ -82,6 +82,7 @@ type Entry struct {
 	Status              string                 `json:"status"`
 	Description         string                 `json:"description"`
 	ReviewsLink         string                 `json:"reviews_link"`
+	PlaceID             string                 `json:"place_id"`
 	Thumbnail           string                 `json:"thumbnail"`
 	Timezone            string                 `json:"timezone"`
 	PriceRange          string                 `json:"price_range"`
@@ -493,6 +494,7 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 	entry.Status = getNthElementAndCast[string](darray, 34, 4, 4)
 	entry.Description = getNthElementAndCast[string](darray, 32, 1, 1)
 	entry.ReviewsLink = getNthElementAndCast[string](darray, 4, 3, 0)
+	entry.PlaceID = ExtractPlaceIDFromReviewsLink(entry.ReviewsLink)
 	entry.Thumbnail = getNthElementAndCast[string](darray, 72, 0, 1, 6, 0)
 	entry.Timezone = getNthElementAndCast[string](darray, 30)
 	entry.PriceRange = getNthElementAndCast[string](darray, 4, 2)
@@ -952,4 +954,21 @@ func filterAndSortEntriesWithinRadius(entries []*Entry, lat, lon, radius float64
 	}
 
 	return slices.Collect(iter.Seq[*Entry](resultIterator))
+}
+
+// ExtractPlaceIDFromReviewsLink extracts the place_id from a Google Maps reviews link
+func ExtractPlaceIDFromReviewsLink(reviewsLink string) string {
+	if reviewsLink == "" {
+		return ""
+	}
+	
+	// Regular expression to match placeid parameter in the URL
+	placeIDRegex := regexp.MustCompile(`placeid=([^&]+)`)
+	matches := placeIDRegex.FindStringSubmatch(reviewsLink)
+	
+	if len(matches) < 2 {
+		return ""
+	}
+	
+	return matches[1]
 }
