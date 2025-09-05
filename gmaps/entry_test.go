@@ -54,6 +54,7 @@ func Test_EntryFromJSON(t *testing.T) {
 		Thumbnail:    "https://lh5.googleusercontent.com/p/AF1QipP4Y7A8nYL3KKXznSl69pXSq9p2IXCYUjVvOh0F=w408-h408-k-no",
 		Timezone:     "Asia/Nicosia",
 		PriceRange:   "€€",
+		PriceCategory: gmaps.PriceCategoryModerate,
 		DataID:       "0x14e732fd76f0d90d:0xe5415928d6702b47",
 		Images: []gmaps.Image{
 			{
@@ -214,5 +215,147 @@ func Test_EntryFromJsonC(t *testing.T) {
 
 	for _, entry := range entries {
 		fmt.Printf("%+v\n", entry)
+	}
+}
+
+func Test_parseRelativeTime(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"23 hours ago", ""}, // Will be empty because we can't predict the exact date
+		{"a day ago", ""},    // Will be empty because we can't predict the exact date
+		{"2 days ago", ""},   // Will be empty because we can't predict the exact date
+		{"3 days ago", ""},   // Will be empty because we can't predict the exact date
+		{"1 week ago", ""},   // Will be empty because we can't predict the exact date
+		{"a month ago", ""},  // Will be empty because we can't predict the exact date
+		{"1 year ago", ""},   // Will be empty because we can't predict the exact date
+		{"Edited 2 months ago", ""}, // Will be empty because we can't predict the exact date
+		{"Edited a day ago", ""},    // Will be empty because we can't predict the exact date
+		{"Edited 1 week ago", ""},   // Will be empty because we can't predict the exact date
+		{"invalid", "invalid"}, // Should return original string if can't parse
+		{"", ""},             // Should return empty string for empty input
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			// Since we can't predict the exact date, we just check that it's not empty
+			// and follows the expected format (YYYY-M-D)
+			result := gmaps.ParseRelativeTime(tt.input)
+			
+			if tt.input == "" {
+				require.Equal(t, "", result)
+			} else if tt.input == "invalid" {
+				require.Equal(t, "invalid", result)
+			} else {
+				// For valid relative time strings, check that we get a full timestamp format
+				require.NotEmpty(t, result)
+				require.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}\+00$`, result)
+			}
+		})
+	}
+}
+
+func TestCategorizePriceRange(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected gmaps.PriceCategory
+	}{
+		// Empty or missing input
+		{"empty string", "", gmaps.PriceCategoryUnspecified},
+		{"whitespace only", "   ", gmaps.PriceCategoryUnspecified},
+		{"tab and spaces", "\t  \n", gmaps.PriceCategoryUnspecified},
+
+		// Symbol-based pricing
+		{"single dollar", "$", gmaps.PriceCategoryBudget},
+		{"double dollar", "$$", gmaps.PriceCategoryModerate},
+		{"triple dollar", "$$$", gmaps.PriceCategoryExpensive},
+		{"quadruple dollar", "$$$$", gmaps.PriceCategoryLuxury},
+		{"five dollars", "$$$$$", gmaps.PriceCategoryUnspecified},
+		{"dollar with spaces", "  $$  ", gmaps.PriceCategoryModerate},
+
+		// Numeric ranges
+		{"range 10-20", "10-20", gmaps.PriceCategoryBudget},
+		{"range 15-25", "15-25", gmaps.PriceCategoryBudget},
+		{"range 20-40", "20-40", gmaps.PriceCategoryModerate},
+		{"range 30-50", "30-50", gmaps.PriceCategoryModerate},
+		{"range 40-100", "40-100", gmaps.PriceCategoryExpensive},
+		{"range 60-80", "60-80", gmaps.PriceCategoryExpensive},
+		{"range 100-200", "100-200", gmaps.PriceCategoryLuxury},
+		{"range 150-300", "150-300", gmaps.PriceCategoryLuxury},
+
+		// Range with different separators
+		{"range with en dash", "10–20", gmaps.PriceCategoryBudget},
+		{"range with em dash", "10—20", gmaps.PriceCategoryBudget},
+		{"range with spaces", "10 - 20", gmaps.PriceCategoryBudget},
+
+		// Plus format
+		{"plus 100", "100+", gmaps.PriceCategoryLuxury},
+		{"plus 50", "50+", gmaps.PriceCategoryExpensive},
+		{"plus 25", "25+", gmaps.PriceCategoryModerate},
+		{"plus 15", "15+", gmaps.PriceCategoryBudget},
+		{"plus with spaces", " 100+ ", gmaps.PriceCategoryLuxury},
+
+		// Single numbers
+		{"single 10", "10", gmaps.PriceCategoryBudget},
+		{"single 20", "20", gmaps.PriceCategoryBudget},
+		{"single 30", "30", gmaps.PriceCategoryModerate},
+		{"single 50", "50", gmaps.PriceCategoryExpensive},
+		{"single 100", "100", gmaps.PriceCategoryLuxury},
+		{"single 150", "150", gmaps.PriceCategoryLuxury},
+
+		// Decimal numbers
+		{"decimal range", "15.5-25.5", gmaps.PriceCategoryModerate},
+		{"decimal single", "25.99", gmaps.PriceCategoryModerate},
+		{"decimal plus", "99.99+", gmaps.PriceCategoryExpensive},
+
+		// Edge cases
+		{"exactly 20", "20", gmaps.PriceCategoryBudget},
+		{"exactly 40", "40", gmaps.PriceCategoryModerate},
+		{"exactly 100", "100", gmaps.PriceCategoryLuxury},
+
+		// Currency symbols with numeric values
+		{"dollar with number", "$25", gmaps.PriceCategoryModerate},
+		{"dollar with decimal", "$15.50", gmaps.PriceCategoryBudget},
+		{"dollar with range", "$10-20", gmaps.PriceCategoryBudget},
+		{"euro with number", "€30", gmaps.PriceCategoryModerate},
+		{"pound with number", "£50", gmaps.PriceCategoryExpensive},
+
+		// Invalid inputs
+		{"invalid text", "expensive", gmaps.PriceCategoryUnspecified},
+		{"invalid range", "a-b", gmaps.PriceCategoryUnspecified},
+		{"negative number", "-10", gmaps.PriceCategoryUnspecified},
+		{"zero", "0", gmaps.PriceCategoryBudget},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := gmaps.CategorizePriceRange(tt.input)
+			require.Equal(t, tt.expected, result, "Input: %q", tt.input)
+		})
+	}
+}
+
+func TestCategorizePriceRange_EdgeCases(t *testing.T) {
+	// Test boundary values
+	boundaryTests := []struct {
+		value    float64
+		expected gmaps.PriceCategory
+	}{
+		{0, gmaps.PriceCategoryBudget},
+		{20, gmaps.PriceCategoryBudget},
+		{20.01, gmaps.PriceCategoryModerate},
+		{40, gmaps.PriceCategoryModerate},
+		{40.01, gmaps.PriceCategoryExpensive},
+		{100, gmaps.PriceCategoryLuxury},
+		{100.01, gmaps.PriceCategoryLuxury},
+	}
+
+	for _, tt := range boundaryTests {
+		t.Run(fmt.Sprintf("boundary_%.2f", tt.value), func(t *testing.T) {
+			result := gmaps.CategorizePriceRange(fmt.Sprintf("%.2f", tt.value))
+			require.Equal(t, tt.expected, result)
+		})
 	}
 }

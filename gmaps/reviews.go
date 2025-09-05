@@ -90,11 +90,11 @@ func (f *fetcher) generateURL(mapURL, pageToken string, pageSize int, requestID 
 		fmt.Sprintf("!2m2!1i%d!2s%s", pageSize, encodedPageToken),
 		fmt.Sprintf("!5m2!1s%s!7e81", requestID),
 		"!8m9!2b1!3b1!5b1!7b1",
-		"!12m4!1b1!2b1!4m1!1e1!11m0!13m1!1e1",
+		"!12m4!1b1!2b1!4m1!1e1!11m0!13m1!1e2",
 	}
 
 	fullURL := fmt.Sprintf(
-		"https://www.google.com/maps/rpc/listugcposts?authuser=0&hl=el&pb=%s",
+		"https://www.google.com/maps/rpc/listugcposts?authuser=0&pb=%s",
 		strings.Join(pbComponents, ""),
 	)
 

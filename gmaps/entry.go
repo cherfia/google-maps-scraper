@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"iter"
 	"math"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Image struct {
@@ -54,6 +56,7 @@ type Review struct {
 	Description    string
 	Images         []string
 	When           string
+	Language       string
 }
 
 type Entry struct {
@@ -82,6 +85,7 @@ type Entry struct {
 	Thumbnail           string                 `json:"thumbnail"`
 	Timezone            string                 `json:"timezone"`
 	PriceRange          string                 `json:"price_range"`
+	PriceCategory       PriceCategory          `json:"price_category"`
 	DataID              string                 `json:"data_id"`
 	Images              []Image                `json:"images"`
 	Reservations        []LinkSource           `json:"reservations"`
@@ -93,6 +97,171 @@ type Entry struct {
 	UserReviews         []Review               `json:"user_reviews"`
 	UserReviewsExtended []Review               `json:"user_reviews_extended"`
 	Emails              []string               `json:"emails"`
+}
+
+// PriceCategory represents the categorized price range
+type PriceCategory string
+
+const (
+	PriceCategoryBudget    PriceCategory = "Budget"
+	PriceCategoryModerate  PriceCategory = "Moderate"
+	PriceCategoryExpensive PriceCategory = "Expensive"
+	PriceCategoryLuxury    PriceCategory = "Luxury"
+	PriceCategoryUnspecified PriceCategory = "Unspecified"
+)
+
+// CategorizePriceRange processes a price_range input and assigns it a category
+func CategorizePriceRange(priceRange string) PriceCategory {
+	// Check if input exists
+	if priceRange == "" {
+		return PriceCategoryUnspecified
+	}
+
+	// Trim whitespace
+	priceRange = strings.TrimSpace(priceRange)
+
+	// Check for symbol-based pricing ($, $$, $$$, $$$$)
+	if strings.HasPrefix(priceRange, "$") {
+		// Check if it's only dollar signs (no numbers mixed in)
+		if regexp.MustCompile(`^\$+$`).MatchString(priceRange) {
+			dollarCount := strings.Count(priceRange, "$")
+			switch dollarCount {
+			case 1:
+				return PriceCategoryBudget
+			case 2:
+				return PriceCategoryModerate
+			case 3:
+				return PriceCategoryExpensive
+			case 4:
+				return PriceCategoryLuxury
+			default:
+				return PriceCategoryUnspecified
+			}
+		}
+		// If it has dollar signs with numbers, extract the numeric value
+		// Check for range format first: $X-Y
+		rangePattern := regexp.MustCompile(`^\$(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)$`)
+		if matches := rangePattern.FindStringSubmatch(priceRange); matches != nil {
+			start, err1 := strconv.ParseFloat(matches[1], 64)
+			end, err2 := strconv.ParseFloat(matches[2], 64)
+			if err1 != nil || err2 != nil {
+				return PriceCategoryUnspecified
+			}
+			midpoint := (start + end) / 2
+			return categorizeNumericPrice(midpoint)
+		}
+		
+		// Check for single number format: $X
+		singlePattern := regexp.MustCompile(`^\$(\d+(?:\.\d+)?)$`)
+		if matches := singlePattern.FindStringSubmatch(priceRange); matches != nil {
+			value, err := strconv.ParseFloat(matches[1], 64)
+			if err != nil {
+				return PriceCategoryUnspecified
+			}
+			return categorizeNumericPrice(value)
+		}
+		
+		return PriceCategoryUnspecified
+	}
+
+	// Check for other currency symbols (€, £, etc.) with repeated symbols
+	currencySymbolPattern := regexp.MustCompile(`^([€£¥₹₽₩₪₫₨₦₡₱₴₸₼₽₾₿]+)$`)
+	if matches := currencySymbolPattern.FindStringSubmatch(priceRange); matches != nil {
+		// Count the number of symbols, not bytes
+		symbolCount := len([]rune(matches[1]))
+		switch symbolCount {
+		case 1:
+			return PriceCategoryBudget
+		case 2:
+			return PriceCategoryModerate
+		case 3:
+			return PriceCategoryExpensive
+		case 4:
+			return PriceCategoryLuxury
+		default:
+			return PriceCategoryUnspecified
+		}
+	}
+
+	// Check for currency symbols with numeric values (handle all currencies)
+	// Pattern for single number with currency: $X, €X, £X
+	currencySinglePattern := regexp.MustCompile(`^[^\d-]*(\d+(?:\.\d+)?)[^\d]*$`)
+	// Pattern for range with currency: $X-Y, €X-Y, £X-Y
+	currencyRangePattern := regexp.MustCompile(`^[^\d-]*(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)[^\d]*$`)
+	
+	if matches := currencyRangePattern.FindStringSubmatch(priceRange); matches != nil {
+		// Range format with currency: $X-Y or €X-Y
+		start, err1 := strconv.ParseFloat(matches[1], 64)
+		end, err2 := strconv.ParseFloat(matches[2], 64)
+		if err1 != nil || err2 != nil {
+			return PriceCategoryUnspecified
+		}
+		midpoint := (start + end) / 2
+		return categorizeNumericPrice(midpoint)
+	}
+	
+	if matches := currencySinglePattern.FindStringSubmatch(priceRange); matches != nil {
+		// Single number with currency: $X or €X
+		value, err := strconv.ParseFloat(matches[1], 64)
+		if err != nil {
+			return PriceCategoryUnspecified
+		}
+		return categorizeNumericPrice(value)
+	}
+
+	// Check for numeric ranges (without currency symbols)
+	// Pattern for ranges like "10-20", "20-40", "100+"
+	rangePattern := regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)$`)
+	plusPattern := regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*\+$`)
+	singlePattern := regexp.MustCompile(`^(\d+(?:\.\d+)?)$`)
+
+	if matches := rangePattern.FindStringSubmatch(priceRange); matches != nil {
+		// Range format: X-Y
+		start, err1 := strconv.ParseFloat(matches[1], 64)
+		end, err2 := strconv.ParseFloat(matches[2], 64)
+		if err1 != nil || err2 != nil {
+			return PriceCategoryUnspecified
+		}
+		midpoint := (start + end) / 2
+		return categorizeNumericPrice(midpoint)
+	}
+
+	if matches := plusPattern.FindStringSubmatch(priceRange); matches != nil {
+		// Plus format: 100+
+		value, err := strconv.ParseFloat(matches[1], 64)
+		if err != nil {
+			return PriceCategoryUnspecified
+		}
+		if value >= 100 {
+			return PriceCategoryLuxury
+		}
+		return categorizeNumericPrice(value)
+	}
+
+	if matches := singlePattern.FindStringSubmatch(priceRange); matches != nil {
+		// Single number format
+		value, err := strconv.ParseFloat(matches[1], 64)
+		if err != nil {
+			return PriceCategoryUnspecified
+		}
+		return categorizeNumericPrice(value)
+	}
+
+	// If we can't parse the input, return Unspecified
+	return PriceCategoryUnspecified
+}
+
+// categorizeNumericPrice maps a numeric value to a price category
+func categorizeNumericPrice(price float64) PriceCategory {
+	if price <= 20 {
+		return PriceCategoryBudget
+	} else if price <= 40 {
+		return PriceCategoryModerate
+	} else if price < 100 {
+		return PriceCategoryExpensive
+	} else {
+		return PriceCategoryLuxury
+	}
 }
 
 func (e *Entry) haversineDistance(lat, lon float64) float64 {
@@ -236,14 +405,14 @@ func (e *Entry) AddExtraReviews(pages [][]byte) {
 	}
 
 	for _, page := range pages {
-		reviews := extractReviews(page)
+		reviews := ExtractReviews(page)
 		if len(reviews) > 0 {
 			e.UserReviewsExtended = append(e.UserReviewsExtended, reviews...)
 		}
 	}
 }
 
-func extractReviews(data []byte) []Review {
+func ExtractReviews(data []byte) []Review {
 	if len(data) >= 4 && string(data[0:4]) == `)]}'` {
 		data = data[4:] // Skip security prefix
 	}
@@ -327,6 +496,7 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 	entry.Thumbnail = getNthElementAndCast[string](darray, 72, 0, 1, 6, 0)
 	entry.Timezone = getNthElementAndCast[string](darray, 30)
 	entry.PriceRange = getNthElementAndCast[string](darray, 4, 2)
+	entry.PriceCategory = CategorizePriceRange(entry.PriceRange)
 	entry.DataID = getNthElementAndCast[string](darray, 10)
 
 	items := getLinkSource(getLinkSourceParams{
@@ -424,12 +594,92 @@ func EntryFromJSON(raw []byte, reviewCountOnly ...bool) (entry Entry, err error)
 	return entry, nil
 }
 
+func ParseRelativeTime(relativeTime string) string {
+	if relativeTime == "" {
+		return ""
+	}
+	
+	// Parse relative time strings like "23 hours ago", "a day ago", "2 days ago", "3 days ago"
+	// and also handle "Edited 2 months ago", "Edited a day ago", etc.
+	now := time.Now().UTC()
+	
+	// Remove "Edited" prefix if present
+	timeStr := strings.TrimPrefix(relativeTime, "Edited ")
+	
+	switch {
+	case strings.Contains(timeStr, "hour"):
+		// Extract number of hours
+		parts := strings.Fields(timeStr)
+		if len(parts) >= 2 {
+			if hours, err := strconv.Atoi(parts[0]); err == nil {
+				date := now.Add(-time.Duration(hours) * time.Hour)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			}
+		}
+	case strings.Contains(timeStr, "day"):
+		// Extract number of days
+		parts := strings.Fields(timeStr)
+		if len(parts) >= 2 {
+			if parts[0] == "a" || parts[0] == "1" {
+				date := now.Add(-24 * time.Hour)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			} else if days, err := strconv.Atoi(parts[0]); err == nil {
+				date := now.Add(-time.Duration(days) * 24 * time.Hour)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			}
+		}
+	case strings.Contains(timeStr, "week"):
+		// Extract number of weeks
+		parts := strings.Fields(timeStr)
+		if len(parts) >= 2 {
+			if parts[0] == "a" || parts[0] == "1" {
+				date := now.Add(-7 * 24 * time.Hour)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			} else if weeks, err := strconv.Atoi(parts[0]); err == nil {
+				date := now.Add(-time.Duration(weeks) * 7 * 24 * time.Hour)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			}
+		}
+	case strings.Contains(timeStr, "month"):
+		// Extract number of months
+		parts := strings.Fields(timeStr)
+		if len(parts) >= 2 {
+			if parts[0] == "a" || parts[0] == "1" {
+				date := now.AddDate(0, -1, 0)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			} else if months, err := strconv.Atoi(parts[0]); err == nil {
+				date := now.AddDate(0, -months, 0)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			}
+		}
+	case strings.Contains(timeStr, "year"):
+		// Extract number of years
+		parts := strings.Fields(timeStr)
+		if len(parts) >= 2 {
+			if parts[0] == "a" || parts[0] == "1" {
+				date := now.AddDate(-1, 0, 0)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			} else if years, err := strconv.Atoi(parts[0]); err == nil {
+				date := now.AddDate(-years, 0, 0)
+				return date.Format("2006-01-02 15:04:05.000000+00")
+			}
+		}
+	}
+	
+	// If we can't parse it, return the original string
+	return relativeTime
+}
+
 func parseReviews(reviewsI []any) []Review {
 	ans := make([]Review, 0, len(reviewsI))
 
 	for i := range reviewsI {
 		el := getNthElementAndCast[[]any](reviewsI, i, 0)
 
+		// Try to get relative time string first (more reliable)
+		relativeTime := getNthElementAndCast[string](el, 1, 6)
+		
+		// Fallback to the old time array method
 		time := getNthElementAndCast[[]any](el, 2, 2, 0, 1, 21, 6, 8)
 
 		profilePic, err := decodeURL(getNthElementAndCast[string](el, 1, 4, 5, 1))
@@ -437,10 +687,29 @@ func parseReviews(reviewsI []any) []Review {
 			profilePic = ""
 		}
 
+		// Extract language information from the review data
+		// Language info is at position [2, 14] in the review structure
+		language := ""
+		if len(el) > 2 {
+			if reviewData, ok := el[2].([]any); ok && len(reviewData) > 14 {
+				if languageInfo, ok := reviewData[14].([]any); ok && len(languageInfo) > 0 {
+					if langCode, ok := languageInfo[0].(string); ok {
+						language = langCode
+					}
+				}
+			}
+		}
+
 		review := Review{
 			Name:           getNthElementAndCast[string](el, 1, 4, 5, 0),
 			ProfilePicture: profilePic,
 			When: func() string {
+				// Try relative time string first
+				if relativeTime != "" {
+					return ParseRelativeTime(relativeTime)
+				}
+				
+				// Fallback to old method
 				if len(time) < 3 {
 					return ""
 				}
@@ -449,6 +718,7 @@ func parseReviews(reviewsI []any) []Review {
 			}(),
 			Rating:      int(getNthElementAndCast[float64](el, 2, 0, 0)),
 			Description: getNthElementAndCast[string](el, 2, 15, 0, 0),
+			Language:    language,
 		}
 
 		if review.Name == "" {
@@ -565,6 +835,10 @@ func getPopularTimes(darray []any) map[string]map[int]int {
 	}
 
 	return popularTimes
+}
+
+func GetNthElementAndCast[T any](arr []any, indexes ...int) T {
+	return getNthElementAndCast[T](arr, indexes...)
 }
 
 func getNthElementAndCast[T any](arr []any, indexes ...int) T {
