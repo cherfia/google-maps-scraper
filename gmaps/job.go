@@ -203,7 +203,8 @@ func (j *GmapJob) BrowserActions(ctx context.Context, page playwright.Page) scra
 	var singlePlace bool
 
 	if err != nil {
-		waitCtx, waitCancel := context.WithTimeout(ctx, time.Second*5)
+		// Wait longer for Google Maps to redirect to single place URL
+		waitCtx, waitCancel := context.WithTimeout(ctx, time.Second*10)
 		defer waitCancel()
 
 		singlePlace = waitUntilURLContains(waitCtx, page, "/maps/place/")
@@ -293,6 +294,9 @@ func scroll(ctx context.Context,
 ) (int, error) {
 	expr := `async () => {
 		const el = document.querySelector("` + scrollSelector + `");
+		if (!el) {
+			return 0;
+		}
 		el.scrollTop = el.scrollHeight;
 
 		return new Promise((resolve, reject) => {
