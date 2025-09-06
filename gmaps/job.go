@@ -204,7 +204,7 @@ func (j *GmapJob) BrowserActions(ctx context.Context, page playwright.Page) scra
 
 	if err != nil {
 		// Wait longer for Google Maps to redirect to single place URL
-		waitCtx, waitCancel := context.WithTimeout(ctx, time.Second*10)
+		waitCtx, waitCancel := context.WithTimeout(ctx, time.Second*15)
 		defer waitCancel()
 
 		singlePlace = waitUntilURLContains(waitCtx, page, "/maps/place/")
