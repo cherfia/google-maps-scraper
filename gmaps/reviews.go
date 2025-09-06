@@ -32,7 +32,7 @@ type fetcher struct {
 }
 
 func newReviewFetcher(params fetchReviewsParams) *fetcher {
-	netClient := stealth.New("firefox", nil)
+	netClient := stealth.New("chromium", nil)
 	ans := fetcher{
 		params:     params,
 		httpClient: netClient,

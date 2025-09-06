@@ -261,7 +261,7 @@ func (w *webrunner) setupMate(_ context.Context, writer io.Writer, job *web.Job)
 		)
 	} else {
 		opts = append(opts,
-			scrapemateapp.WithStealth("firefox"),
+			scrapemateapp.WithStealth("chromium"),
 		)
 	}
 

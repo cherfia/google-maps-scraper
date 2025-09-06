@@ -215,7 +215,7 @@ func (r *fileRunner) setApp() error {
 			opts = append(opts, scrapemateapp.WithJS(scrapemateapp.DisableImages()))
 		}
 	} else {
-		opts = append(opts, scrapemateapp.WithStealth("firefox"))
+		opts = append(opts, scrapemateapp.WithStealth("chromium"))
 	}
 
 	if !r.cfg.DisablePageReuse {
